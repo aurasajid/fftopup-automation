@@ -12,9 +12,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Playwright browsers already bundled in base image — no extra install needed
-# but make sure system deps are present
-RUN playwright install-deps chromium || true
 
 # Copy app
 COPY . .
