@@ -3,23 +3,28 @@
 A Free Fire diamond top-up automation service for the Bangladesh server, with a
 FastAPI web API, a Telegram bot, and a Playwright-driven browser automation layer.
 
+All top-up requests are now **asynchronous**: the API returns immediately with
+an `order_id`, and the caller polls `/api/order/{id}` for the result. Orders
+are persisted in `orders.json` and survive restarts (pending orders are
+auto-canceled on boot).
+
 ---
 
 ## 📑 Table of Contents
 
 1. [Features](#-features)
 2. [Architecture](#-architecture)
-3. [Supported Environments](#-supported-environments)
-4. [File Structure](#-file-structure)
-5. [Installation](#-installation)
+3. [Order Lifecycle](#-order-lifecycle)
+4. [Supported Environments](#-supported-environments)
+5. [File Structure](#-file-structure)
+6. [Installation](#-installation)
    - [Linux (Debian/Ubuntu)](#linux-debianubuntu)
    - [Linux (Fedora/RHEL/Arch)](#linux-fedorarhelarch)
    - [macOS](#macos)
    - [Windows 10/11](#windows-1011)
    - [Docker](#docker)
    - [Railway / Fly.io / Render](#railway--flyio--render)
-6. [Configuration (.env)](#-configuration-env)
-7. [What to Change Per Environment](#-what-to-change-per-environment)
+7. [Configuration (.env)](#-configuration-env)
 8. [API Reference](#-api-reference)
 9. [Voucher Format](#-voucher-format)
 10. [Package Values](#-package-values)
@@ -30,12 +35,17 @@ FastAPI web API, a Telegram bot, and a Playwright-driven browser automation laye
 
 ## ✨ Features
 
+- **Async top-up flow** — every request returns an `order_id`; poll for the result
+- **HTTP 307 redirect** — `/topup?api=KEY&uid=..&pkg=..&code=..` → `/topup?api=KEY&id=N`
+- **Persistent order tracking** — `orders.json` survives restarts
+- **Startup recovery** — stale `pending` orders are auto-canceled on boot
+- **Browser-close detection** — a browser that closes mid-flow flips the order to `canceled`
 - **Browser automation** via Playwright (stealth + fingerprint rotation)
 - **Shared Chromium pool** — one browser, many contexts, fast concurrent top-ups
 - **Idle fingerprint rotator** — rotates Chromium after N seconds of inactivity
-- **FastAPI HTTP API** with API-key protection for direct integrations
-- **Telegram bot** with conversational flow + direct-command mode
-- **Web UI** (`index.html`) served at `/`
+- **FastAPI HTTP API** with per-key usage tracking
+- **Telegram bot** with conversational flow + direct-command mode (toggleable)
+- **Web UI** (`index.html`) served at `/` (toggleable)
 - **DNS + TLS warm-up** to reduce first-request latency
 - **Player name lookup** via configurable third-party APIs
 - **Voucher auto-detection** (`UPBD*` → UP Gift, `BDMB*` → UniPin)
@@ -45,29 +55,80 @@ FastAPI web API, a Telegram bot, and a Playwright-driven browser automation laye
 ## 🏗 Architecture
 
 ```
-                 ┌──────────────────┐
-Browser ────────►│                  │
-                 │   FastAPI (main) │────► automation ──► browser_pool ──► Playwright
-Telegram ◄──────►│                  │              │
-                 │   + bot polling  │              ▼
-                 └──────────────────┘        Garena shop (shop.garena.my)
-                        │
-                        ▼
-                 apikeys.json (usage counters)
-                 .env          (config)
+┌────────────────────────────────────────────────────────────────────┐
+│                          FastAPI (main.py)                         │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│  GET /topup?api=KEY&uid=..&pkg=..&code=..                          │
+│      ├─ validate key (401 if bad)                                  │
+│      ├─ create order (status=pending) in orders.json               │
+│      └─ 307 redirect → /topup?api=KEY&id=N                         │
+│                                                                    │
+│  GET /topup?api=KEY&id=N                                           │
+│      └─ queue background job, return {order_id, status:pending}    │
+│                                                                    │
+│  GET /api/order/{id}            → poll status                      │
+│  GET /api/orders                → list recent orders               │
+│                                                                    │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│   Background worker ──► automation ──► browser_pool ──► Playwright │
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+                Garena shop (shop.garena.my)
+                apikeys.json   (key + usage store)
+                orders.json    (order history)
+                .env           (config)
 ```
 
 **Key modules:**
 
 | File | Role |
 |---|---|
-| `main.py` | FastAPI app, HTTP endpoints, API-key auth, background tasks |
+| `main.py` | FastAPI app, redirect logic, order store, background workers, API-key auth |
 | `automation.py` | Playwright automation: opens Garena, fills UID, selects package, submits voucher, polls result |
 | `browser_pool.py` | Shared Chromium pool, stealth fingerprint, idle rotator |
 | `bot.py` | Telegram bot (long-polling) |
 | `index.html` | Web frontend (single file, dark/light theme) |
-| `apikeys.json` | Direct-API key + usage store |
+| `apikeys.json` | API key + usage store |
+| `orders.json` | Order history (auto-created on first order) |
 | `.env` | Runtime configuration |
+
+---
+
+## 🔄 Order Lifecycle
+
+Every top-up creates an order that moves through these states:
+
+```
+         ┌──────────┐
+         │ pending  │  ← created on enqueue
+         └────┬─────┘
+              │
+     ┌────────┼────────┬──────────────┐
+     ▼        ▼        ▼              ▼
+┌─────────┐ ┌───────┐ ┌──────────┐ ┌──────────┐
+│complete │ │failed │ │ canceled │ │ canceled │
+└─────────┘ └───────┘ └──────────┘ └──────────┘
+   browser    browser   browser        server
+   returned   returned  closed         restarted
+   success    a reason  mid-flow       / shut down
+```
+
+| Transition | Triggered by | `reason` value |
+|---|---|---|
+| `pending → complete` | Browser reported success | `""` |
+| `pending → failed` | Browser reported a failure reason | e.g. `INVALID_VOUCHER` |
+| `pending → canceled` | Playwright error: *"browser has been closed"* | `BROWSER_CLOSED` |
+| `pending → canceled` | Task cancelled (shutdown / admin) | `CANCELLED` / `MANUAL_CANCEL` |
+| `pending → canceled` | Server restart found order still pending | `INTERRUPTED` |
+| `pending → canceled` | Server shutdown flushed in-flight orders | `SHUTDOWN` |
+
+**Rule:** No `pending` order survives a restart or shutdown.
+
+**API key usage is consumed only when an order reaches `complete`.** Failed and canceled orders do not decrement your quota.
 
 ---
 
@@ -75,45 +136,46 @@ Telegram ◄──────►│                  │              │
 
 | Environment | Supported | Notes |
 |---|---|---|
-| **Ubuntu / Debian** | ✅ Recommended | Best tested, longest support window |
+| **Ubuntu / Debian** | ✅ Recommended | Best tested |
 | **Fedora / RHEL** | ✅ | Slight package name differences |
 | **Arch / Manjaro** | ✅ | Rolling release, works fine |
-| **Alpine Linux** | ⚠️ | Playwright deps need extra work; use Ubuntu-based image instead |
-| **macOS (Intel / Apple Silicon)** | ✅ | Chromium via Playwright works natively |
-| **Windows 10 / 11** | ✅ | Requires PowerShell or CMD; not WSL-only |
+| **Alpine Linux** | ⚠️ | Playwright deps need extra work; use Ubuntu base image |
+| **macOS (Intel / Apple Silicon)** | ✅ | Native arm64 Chromium |
+| **Windows 10 / 11** | ✅ | PowerShell or CMD |
 | **Docker (any host)** | ✅ | Recommended for production |
-| **Railway / Fly.io / Render** | ✅ | Use the Playwright base image, see Docker section |
-| **Raspberry Pi (ARM64)** | ⚠️ | Playwright support is experimental; expect missing packages |
-| **AWS Lambda / Cloud Functions** | ❌ | Not supported — no persistent filesystem or long-running processes |
+| **Railway / Fly.io / Render** | ✅ | Use the Playwright base image |
+| **Raspberry Pi (ARM64)** | ⚠️ | Playwright support is experimental |
+| **AWS Lambda / Cloudflare Workers** | ❌ | No persistent FS, no long-running processes |
 
-**Python:** 3.10, 3.11, or 3.12 (3.12 recommended; 3.9 not tested with current deps).
+**Python:** 3.10, 3.11, or 3.12 (3.12 recommended).
 
 ---
 
 ## 📁 File Structure
 
-The layout is **identical across all environments**:
-
 ```
 ff-topup/
-├── main.py               # FastAPI entrypoint
+├── main.py               # FastAPI entrypoint (redirect + order store)
 ├── automation.py         # Playwright automation
 ├── browser_pool.py       # Shared Chromium pool
 ├── bot.py                # Telegram bot
 ├── index.html            # Web UI (served at /)
-├── apikeys.json          # Direct-API key store (auto-created if missing)
+├── apikeys.json          # API key store (auto-created if missing)
+├── orders.json           # Order history (auto-created on first order)
 ├── requirements.txt      # Python dependencies
-├── railway.json          # Railway deploy config (optional)
-├── Dockerfile            # If using Docker
+├── railway.json          # Railway deploy config
+├── Dockerfile            # Container build
+├── .dockerignore         # Exclude .env from the image
 ├── .env                  # Runtime config (NOT committed)
-└── .env.example          # Template (committed)
+├── .env.example          # Template (committed)
+└── README.md             # This file
 ```
 
 ---
 
 ## 📦 Installation
 
-### Common Prerequisites (all platforms)
+### Common Prerequisites
 
 - **Python 3.10+**
 - **pip** and **venv**
@@ -137,12 +199,12 @@ git clone <your-repo> ff-topup && cd ff-topup
 python3 -m venv .venv
 source .venv/bin/activate
 
-# 3. Install Python deps
+# 3. Python deps
 pip install -r requirements.txt
 
-# 4. Install Chromium for Playwright
+# 4. Chromium for Playwright
 playwright install chromium
-playwright install-deps   # only needed once; requires sudo
+playwright install-deps   # requires sudo
 
 # 5. Configure
 cp .env.example .env
@@ -156,8 +218,6 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 
 ### Linux (Fedora/RHEL/Arch)
 
-The Python workflow is identical. Only the **system packages** differ:
-
 **Fedora / RHEL / CentOS:**
 ```bash
 sudo dnf install -y nss nspr atk at-spi2-atk cups-libs libdrm \
@@ -170,85 +230,54 @@ sudo pacman -S --needed nss nspr atk at-spi2-atk cups libdrm \
     libxcomposite libxdamage libxfixes libxrandr mesa alsa-lib
 ```
 
-Then continue with the same `pip install` / `playwright install` steps.
+Then follow the same `pip install` / `playwright install` steps.
 
 ---
 
 ### macOS
 
 ```bash
-# 1. Homebrew (if not installed)
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# 2. Python (system python3 works but brew python is safer)
 brew install python@3.12
 
-# 3. Clone & venv
 git clone <your-repo> ff-topup && cd ff-topup
 python3.12 -m venv .venv
 source .venv/bin/activate
 
-# 4. Python deps
 pip install -r requirements.txt
-
-# 5. Chromium for Playwright
 playwright install chromium
 # (no `install-deps` needed on macOS)
 
-# 6. Configure
 cp .env.example .env
 $EDITOR .env
 
-# 7. Run
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
-
-> **Apple Silicon note:** Playwright ships native arm64 Chromium. No Rosetta required.
 
 ---
 
 ### Windows 10/11
 
-Use **PowerShell** (not CMD) for the venv activation commands.
-
 ```powershell
-# 1. Python from python.org (or Microsoft Store)
-#    Ensure "Add Python to PATH" is checked during install.
+# Ensure "Add Python to PATH" during install
 
-# 2. Clone & venv
 git clone <your-repo> ff-topup
 cd ff-topup
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 # If blocked: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
-# 3. Python deps
 pip install -r requirements.txt
-
-# 4. Chromium for Playwright
 playwright install chromium
-# No `install-deps` on Windows; Chromium ships with its DLLs.
 
-# 5. Configure
 Copy-Item .env.example .env
 notepad .env
 
-# 6. Run
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
-
-> **Windows PATH issue:** if `playwright` isn't found, run
-> `.\.venv\Scripts\playwright.exe install chromium`.
-
-> **Antivirus:** Windows Defender sometimes flags Chromium's headless mode.
-> Add your project folder to the exclusion list.
 
 ---
 
 ### Docker
-
-Use the **official Playwright base image** — it already has Chromium and
-all OS deps:
 
 ```dockerfile
 # Dockerfile
@@ -256,27 +285,62 @@ FROM mcr.microsoft.com/playwright/python:v1.47.0-jammy
 
 WORKDIR /app
 
-# Python deps first (better layer caching)
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    HEADLESS=true
+
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-# App code
 COPY . .
-
-# Playwright browsers already installed in base image
-# (chromium + firefox + webkit are all present by default)
 
 ENV PORT=8080
 EXPOSE 8080
 
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:${PORT:-8080}/api/health || exit 1
+
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]
 ```
 
-Build and run:
+Build and run (mount `apikeys.json` and `orders.json` for persistence):
 
 ```bash
 docker build -t ff-topup .
-docker run --rm -p 8080:8080 --env-file .env ff-topup
+docker run --rm -p 8080:8080 \
+  --env-file .env \
+  -v "$(pwd)/apikeys.json:/app/apikeys.json" \
+  -v "$(pwd)/orders.json:/app/orders.json" \
+  ff-topup
+```
+
+**Add a `.dockerignore`** — critical for keeping `.env` out of the image:
+
+```
+Dockerfile
+.dockerignore
+
+.env
+.env.*
+!.env.example
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+.git/
+.gitignore
+
+.vscode/
+.idea/
+
+*.log
+logs/
+
+.DS_Store
+Thumbs.db
 ```
 
 ---
@@ -302,8 +366,7 @@ docker run --rm -p 8080:8080 --env-file .env ff-topup
 }
 ```
 
-> ⚠️ **Important:** bump `healthcheckTimeout` to **90** (not 30). Chromium
-> takes 15–25s to launch on cold start, plus DNS+TLS warm-up.
+> ⚠️ **Important:** `healthcheckTimeout` must be **90**, not 30. Chromium cold start takes 15–25 s.
 
 **Fly.io (`fly.toml`):**
 
@@ -320,6 +383,10 @@ primary_region = "sin"
   auto_stop_machines = false
   auto_start_machines = true
 
+[[mounts]]
+  source = "ff_data"
+  destination = "/app/data"
+
 [checks.health]
   type = "http"
   port = 8080
@@ -329,211 +396,88 @@ primary_region = "sin"
   grace_period = "120s"
 ```
 
-**Render:** use the "Docker" environment, point to your `Dockerfile`, and
-set `healthCheckPath` to `/api/health`. Expect cold starts of 20–40s
-because Render spins down free services.
+**Render:** use the "Docker" environment. Set `healthCheckPath` to `/api/health`. Cold starts take 20–40 s.
 
 > ⚠️ **Do NOT deploy to AWS Lambda / Cloudflare Workers / Vercel serverless.**
-> Chromium can't run in those environments, and the top-up flow takes
-> 30–120 seconds per request.
 
 ---
 
 ## ⚙ Configuration (`.env`)
 
-The `.env` file **must be named exactly `.env`** (no `.txt`), and it must
-sit next to `main.py`.
+The `.env` file **must be named exactly `.env`** (no `.txt`) next to `main.py`.
 
 ### Full Reference
 
 ```env
 # ─── Telegram Bot ─────────────────────────────────────────────
 TG_BOT_TOKEN=              # From @BotFather. Empty = bot disabled.
-TG_CHAT_ID=                # Admin chat for notifications. Empty = silent.
-TG_ALLOWED_USERS=          # Comma-separated Telegram user IDs. Empty = allow all.
+TG_CHAT_ID=                # Admin chat for notifications.
+TG_ALLOWED_USERS=          # Comma-separated user IDs. Empty = allow all.
+
+# ─── Feature toggles ──────────────────────────────────────────
+ENABLE_FRONTEND=true       # Serve index.html at "/"
+ENABLE_TELEGRAM_BOT=true   # Start the Telegram long-polling bot
+
+# ─── Web frontend API key ─────────────────────────────────────
+# This must match a key in apikeys.json.
+# It is injected into index.html and used by the browser form.
+WEB_API_KEY=fftpautoapiWEBfrontend000000000000000000000
 
 # ─── Browser Mode ─────────────────────────────────────────────
-HEADLESS=true              # true = invisible (server). false = visible (local debug).
-WEBRENDER=false            # true = load CSS/images. false = plain-text (faster).
-BLOCK_TRACKERS=true        # Block analytics domains.
-ENABLE_WARMUP=true         # Pre-resolve DNS+TLS for Garena/UniPin before launch.
+HEADLESS=true              # true = server. false = visible (local debug).
+WEBRENDER=false            # false = plain-text (faster).
+BLOCK_TRACKERS=true
+ENABLE_WARMUP=true
 
 # ─── Timeouts (milliseconds) ──────────────────────────────────
-TIMEOUT_NAV=60000          # Page navigation timeout.
-TIMEOUT_SHORT=45000        # Short waits (button visible, etc.).
-TIMEOUT_RESULT=90000       # Max time to poll for the top-up result.
+TIMEOUT_NAV=60000
+TIMEOUT_SHORT=45000
+TIMEOUT_RESULT=90000
 
 # ─── Fixed Pauses (milliseconds) ──────────────────────────────
-PAUSE_AFTER_PAGE=800       # After Garena home loads.
-PAUSE_AFTER_UID=2500       # After typing the UID.
-PAUSE_AFTER_LOGIN=600      # After clicking Login.
-PAUSE_AFTER_PROCEED=400    # After "Proceed to Payment".
-PAUSE_AFTER_DIAMOND=300    # After clicking a package tile.
-PAUSE_AFTER_TAB=300        # After opening "Physical Vouchers".
-PAUSE_AFTER_PROVIDER=300   # After selecting UniPin / UP Gift.
-PAUSE_AFTER_SERIAL=100     # After typing the serial.
-PAUSE_AFTER_PIN=100        # After typing the PIN.
-PAUSE_BEFORE_CONFIRM=80    # Before clicking Confirm.
+PAUSE_AFTER_PAGE=800
+PAUSE_AFTER_UID=2500
+PAUSE_AFTER_LOGIN=600
+PAUSE_AFTER_PROCEED=400
+PAUSE_AFTER_DIAMOND=300
+PAUSE_AFTER_TAB=300
+PAUSE_AFTER_PROVIDER=300
+PAUSE_AFTER_SERIAL=100
+PAUSE_AFTER_PIN=100
+PAUSE_BEFORE_CONFIRM=80
 
 # ─── Result Polling (milliseconds) ────────────────────────────
-RESULT_POLL_INTERVAL=100        # After the first 5 seconds.
-RESULT_POLL_INTERVAL_FAST=50    # During the first 5 seconds.
+RESULT_POLL_INTERVAL=100
+RESULT_POLL_INTERVAL_FAST=50
 
-# ─── Typing Speed (ms between keystrokes) ─────────────────────
+# ─── Typing Speed (ms) ────────────────────────────────────────
 TYPE_DELAY_UID=15
 TYPE_DELAY_PIN=10
 
-# ─── Fallback Package ─────────────────────────────────────────
-FALLBACK_PACKAGE=25        # Used when a direct-API caller omits `pkg`.
+# ─── Fallback package ─────────────────────────────────────────
+FALLBACK_PACKAGE=25
+
+# ─── Order store ──────────────────────────────────────────────
+MAX_ORDERS_KEPT=1000       # Orders to retain in orders.json
 
 # ─── Browser Fingerprint Rotation ─────────────────────────────
-IDLE_ROTATE_SECONDS=300    # Rotate Chromium after N seconds idle.
-ROTATOR_INTERVAL=30        # How often the rotator wakes up.
+IDLE_ROTATE_SECONDS=300
+ROTATOR_INTERVAL=30
 
 # ─── Player Name API ──────────────────────────────────────────
 PLAYER_API_URLS=https://ffnamecheck.vercel.app/info?uid={uid}
-PLAYER_API_REGION=bd       # Appended as `&region=bd` if not already in URL.
+PLAYER_API_REGION=bd
 
-# ─── Developer Credit (footer) ────────────────────────────────
+# ─── Developer Credit ─────────────────────────────────────────
 DEV_NAME=S!XU
 DEV_LINK=https://t.me/aura_sajid
 DEV_LINK_TEXT=S!XU
 
 # ─── Server ───────────────────────────────────────────────────
-PORT=8000                  # Local port (Railway/Fly override this).
+PORT=8000
 ```
 
-### Booleans
-
-All boolean values accept only `true` or `false` (lowercase). Anything
-else is treated as `false` by `_bool()`.
-
-### Comments
-
-Inline `#` comments after a value are supported by `python-dotenv` but
-**fragile**. Put comments on their own line.
-
----
-
-## 🔧 What to Change Per Environment
-
-### 1. `HEADLESS`
-
-| Where | Recommended | Why |
-|---|---|---|
-| Local dev (any OS) | `false` | See the browser window for debugging |
-| Server / VPS / Docker / Cloud | `true` | No display; headless is required |
-
-### 2. `WEBRENDER`
-
-| Where | Recommended | Why |
-|---|---|---|
-| Slow networks / cost-sensitive | `false` | Blocks images, CSS, fonts |
-| Garena changed layout and packages won't click | `true` | Full render may fix selectors |
-| Debugging UI issues | `true` | See what the page really looks like |
-
-### 3. `ENABLE_WARMUP`
-
-| Where | Recommended | Why |
-|---|---|---|
-| Cold-start platforms (Railway, Fly, Render) | `true` | Saves ~1s on first request |
-| Frequently rotated browser pool | `false` | Warm-up runs on every rotation; slow |
-| Very reliable network | `false` | Not needed |
-
-### 4. `IDLE_ROTATE_SECONDS`
-
-| Where | Recommended | Why |
-|---|---|---|
-| High traffic | `600–1200` | Avoid frequent browser restarts |
-| Low traffic / security-sensitive | `120–300` | Rotate fingerprints faster |
-| Debugging | `99999` | Effectively disable rotation |
-
-### 5. `PORT`
-
-| Where | Value |
-|---|---|
-| Local Linux/macOS/Windows | `8000` (or any free port) |
-| Railway | leave unset — Railway injects `$PORT` |
-| Fly.io | leave unset — Fly injects `$PORT` (internal 8080 by default) |
-| Docker | whatever you `EXPOSE` (8080 in the Dockerfile above) |
-| Render | leave unset — Render injects `$PORT` |
-
-### 6. Player Name API
-
-The default `https://ffnamecheck.vercel.app/info?uid={uid}` is a
-third-party endpoint and may go offline or rate-limit you.
-
-**Change it if:**
-- You get "Player not found" for valid UIDs
-- You see "HTTP Error" in responses
-- You want to run your own lookup service
-
-Set one or more URLs (comma-separated, tried left to right):
-
-```env
-PLAYER_API_URLS=https://api1.example/info?uid={uid},https://api2.example/check/{uid}
-PLAYER_API_REGION=bd
-```
-
-The `{uid}` placeholder is replaced with the sanitized UID. If a URL
-doesn't already contain `?region=` or `&region=`, `PLAYER_API_REGION` is
-appended automatically.
-
-### 7. Telegram Bot
-
-| Where | Value |
-|---|---|
-| Production | Set `TG_BOT_TOKEN` + `TG_CHAT_ID` |
-| Local dev, no bot needed | Leave `TG_BOT_TOKEN` empty → bot disabled automatically |
-| Restricted access | Set `TG_ALLOWED_USERS=123456,789012` |
-
-### 8. `FALLBACK_PACKAGE`
-
-This is what a **direct-API caller** gets when they omit `pkg`.
-Defaults:
-
-- `main.py` defaults to `115` if `.env` doesn't set it
-- `.env.example` ships with `25`
-
-Pick a small value (e.g. `25`) so accidental fallbacks don't burn big
-vouchers.
-
-### 9. Filesystem Permissions
-
-**Linux / macOS:** the directory containing `apikeys.json` must be
-**writable** by the user running uvicorn. The app rewrites this file
-whenever a key is consumed.
-
-```bash
-chmod 664 apikeys.json
-chmod 755 .
-```
-
-**Windows:** ensure the process user has **Modify** permission on the
-project folder (default for user-owned folders is fine).
-
-**Docker:** mount a volume if you want usage counters to persist across
-container restarts:
-
-```bash
-docker run -v $(pwd)/apikeys.json:/app/apikeys.json:rw ...
-```
-
-**Railway / Fly / Render:** the filesystem is **ephemeral** — usage
-counters reset on every redeploy. If you need durable quota tracking,
-move to Redis/Postgres/KV.
-
-### 10. Static Frontend
-
-`index.html` is served by FastAPI directly from disk. On **container
-platforms**, ensure it's copied into the image (the Dockerfile above
-does `COPY . .` which includes it).
-
-If you serve the frontend from a separate domain (e.g. GitHub Pages),
-you'll need to:
-
-1. Set CORS origins in `main.py` (currently `allow_origins=["*"]`)
-2. Point the frontend's `fetch('/api/...')` calls at the API's full URL
+**Booleans** accept only `true` or `false` (lowercase). Anything else → `false`.
 
 ---
 
@@ -547,21 +491,19 @@ Base URL (local): `http://localhost:8000`
 GET /api/health
 ```
 
-**Response:**
 ```json
 {
   "ok": true,
   "service": "ff-topup-automation",
   "status": "online",
-  "headless": "true",
-  "webrender": "false",
-  "warmup": "true",
-  "idle_rotate_seconds": 300,
-  "rotator_interval": 30,
-  "tg_enabled": true,
-  "api_keys_count": 4,
-  "api_keys_enabled": 3,
-  "fallback_package": "25"
+  "frontend": true,
+  "telegram_bot": true,
+  "web_api_key_set": true,
+  "orders_in_memory": 12,
+  "live_tasks": 1,
+  "next_order_id": 13,
+  "api_keys_count": 5,
+  "api_keys_enabled": 4
 }
 ```
 
@@ -571,7 +513,6 @@ GET /api/health
 GET /api/config
 ```
 
-**Response:**
 ```json
 {
   "player_api_urls": ["https://ffnamecheck.vercel.app/info?uid={uid}"],
@@ -588,142 +529,199 @@ GET /api/config
 GET /api/stats
 ```
 
-**Response:**
 ```json
 {
   "uptime_seconds": 3600,
   "total": 42,
   "success": 40,
-  "failed": 2,
-  "last_duration": 3.21,
-  "average_duration": 3.85,
-  "min_duration": 2.10,
-  "max_duration": 12.44,
-  "recent_durations": [3.21, 4.02, 2.88]
+  "failed": 1,
+  "canceled": 1,
+  "average_duration": 18.85,
+  "orders_in_memory": 42,
+  "live_tasks": 1
 }
 ```
 
-### Public Top-Up (no API key)
+---
 
-Used by `index.html`. **No authentication.**
+### Main Top-Up Flow (redirect-based)
+
+#### Step 1 — Submit a top-up
 
 ```
-GET  /api/topup?uid=<uid>&pkg=<pkg>&code=<voucher>[&pin=<pin>]
-POST /api/topup
+GET /topup?api=<KEY>&uid=<uid>&pkg=<pkg>&code=<voucher>[&pin=<pin>]
 ```
 
-**GET query params:**
+Server validates the key, creates an order, and **307-redirects** to:
 
-| Name | Type | Required | Description |
-|---|---|---|---|
-| `uid` | string | ✅ | Free Fire player UID (6–15 digits) |
-| `pkg` | string | ✅ | Package: `25` / `115` / `weekly` / etc. |
-| `code` | string | ✅ | Voucher serial, optionally with PIN |
-| `pin` | string | ❌ | PIN if not embedded in `code` |
-
-**POST body (JSON):**
-
-```json
-{
-  "uid": "3761036809",
-  "pkg": "115",
-  "code": "UPBD-P-S-01989133 1527-6324-9731-2625",
-  "pin": ""
-}
+```
+GET /topup?api=<KEY>&id=<order_id>
 ```
 
-**Success response:**
+**If the key is invalid:** `401 Unauthorized`, no order created, no redirect.
+**The order is not created for the wrong key.**
+
+#### Step 2 — The redirect target runs the job
+
+```
+GET /topup?api=<KEY>&id=<N>
+```
+
+The key must match the order's owner, otherwise `404 Not Found` (no leak).
+
+Response:
 
 ```json
 {
   "success": true,
+  "order_id": 123,
+  "status": "pending",
+  "message": "Order queued. Poll /api/order/{order_id} for the result.",
+  "poll_url": "/api/order/123"
+}
+```
+
+#### Step 3 — Poll for the result
+
+```
+GET /api/order/<N>
+```
+
+While running:
+
+```json
+{
+  "order_id": 123,
+  "uid": "3761036809",
+  "pkg": "115",
+  "voucher": "UPBD-P-S-12345678 1234-5678-9012-3456",
+  "source": "direct",
+  "status": "pending",
+  "duration": 0.0
+}
+```
+
+After success:
+
+```json
+{
+  "order_id": 123,
+  "uid": "3761036809",
+  "pkg": "115",
+  "voucher": "UPBD-P-S-12345678 1234-5678-9012-3456",
+  "source": "direct",
+  "status": "complete",
+  "reason": "",
   "message": "Topup Completed Successfully!",
-  "package_input": "115",
-  "duration": 3.42
+  "duration": 18.42
 }
 ```
 
-**Failure response:**
+After failure:
 
 ```json
 {
-  "success": false,
+  "order_id": 123,
+  "status": "failed",
   "reason": "INVALID_VOUCHER",
-  "message": "Invalid voucher code. Check the serial and PIN.",
-  "package_input": "115",
-  "duration": 2.88
+  "message": "Invalid voucher code. Check the serial and PIN."
 }
 ```
 
-### Direct API (API-key protected)
+**Note:** `api_key` is never returned in any public response.
 
-Same behavior as `/api/topup`, but requires an `api` key. Three aliases
-are provided:
+---
+
+### Alternate Direct API (redirect-based)
 
 ```
-GET /api=<key>&uid=...&code=...&pkg=...[&pin=...]
-GET /topup?api=<key>&uid=...&code=...&pkg=...[&pin=...]
-GET /api/direct?api=<key>&uid=...&code=...&pkg=...[&pin=...]
+GET /api=<KEY>&uid=...&code=...&pkg=...[&pin=...]
+GET /api/direct?api=<KEY>&uid=...&code=...&pkg=...[&pin=...]
 ```
 
-**Query params:**
+Both behave like the main `/topup` — they create an order and 307-redirect to `/topup?api=KEY&id=N`.
 
-| Name | Type | Required | Description |
-|---|---|---|---|
-| `api` | string | ✅ | API key from `apikeys.json` |
-| `uid` | string | ✅ | Player UID |
-| `code` | string | ✅ | Voucher serial (+ PIN if embedded) |
-| `pkg` | string | ❌ | Falls back to `FALLBACK_PACKAGE` |
-| `pin` | string | ❌ | PIN |
+---
 
-**Success adds:**
+### POST `/topup` — no redirect
+
+```
+POST /topup
+Content-Type: application/json
+
+{
+  "api": "fftpautotest",
+  "uid": "3761036809",
+  "pkg": "115",
+  "code": "UPBD-P-S-12345678 1234-5678-9012-3456",
+  "pin": ""
+}
+```
+
+Returns the same JSON shape as Step 2, no redirect.
+
+---
+
+### Web frontend top-up
+
+```
+GET  /api/topup?api=<KEY>&uid=...&pkg=...&code=...
+POST /api/topup  { "api":"KEY", "uid":"...", "pkg":"...", "code":"..." }
+```
+
+Used internally by `index.html`. Returns the same JSON shape as Step 2 (no redirect).
+
+---
+
+### List recent orders
+
+```
+GET /api/orders?limit=20
+```
 
 ```json
 {
-  "usage_remaining": 42,
-  "usage_written": true
+  "count": 3,
+  "orders": [
+    { "order_id": 12, "uid": "...", "status": "complete", ... },
+    { "order_id": 11, "uid": "...", "status": "canceled", ... }
+  ]
 }
 ```
 
-**401 response:**
+The `api_key` field is stripped from every item.
 
-```json
-{
-  "detail": "API key rejected: unknown key"
-}
-```
-
-Possible `detail` values: `missing key`, `unknown key`,
-`key disabled or exhausted`.
+---
 
 ### Admin Endpoints (localhost only)
 
-These return **403 Forbidden** if the caller's IP is not
-`127.0.0.1`, `localhost`, or `::1`.
+Return `403 Forbidden` when called from a non-local IP.
 
 ```
-GET  /api/keys           # list keys (masked)
-POST /api/keys/reload    # reload apikeys.json from disk
+GET  /api/keys                      # list keys (masked)
+POST /api/keys/reload               # reload apikeys.json
+POST /api/orders/reload             # reload orders.json
+POST /api/orders/cancel/{order_id}  # force-cancel a live order
 ```
+
+---
 
 ### Frontend
 
 ```
-GET /      # index.html
+GET /      # index.html (with the WEB_API_KEY injected as window.__FFT_API_KEY__)
 ```
 
 ---
 
 ## 🎟 Voucher Format
 
-Supported serial prefixes:
-
-| Prefix | Provider | Selector in Garena |
+| Prefix | Provider | Garena selector |
 |---|---|---|
 | `UPBD` | UP Gift | "UP Gift" tab |
 | `BDMB` | UniPin | "UniPin" tab |
 
-**Accepted input formats:**
+Accepted input:
 
 ```
 UPBD-P-S-01989133 1527-6324-9731-2625
@@ -746,11 +744,10 @@ The parser strips all non-alphanumerics from both serial and PIN.
 | `610` | 610 Diamonds |
 | `1240` | 1240 Diamonds |
 | `2530` | 2530 Diamonds |
-| `weekly` | Weekly Membership (alias: `161`) |
-| `monthly` | Monthly Membership (alias: `800`) |
+| `weekly` | Weekly Membership |
+| `monthly` | Monthly Membership |
 
-Case-insensitive. `WEEKLY`, `Weekly`, `week`, `w` all resolve to
-`weekly`.
+Case-insensitive.
 
 ---
 
@@ -759,17 +756,39 @@ Case-insensitive. `WEEKLY`, `Weekly`, `week`, `w` all resolve to
 ### Chromium won't launch
 
 ```
-playwright._impl._errors.Error: Executable doesn't exist at ...
+playwright._errors.Error: Executable doesn't exist
 ```
 
-**Fix:** `playwright install chromium`. On Linux, also run
-`playwright install-deps` (requires sudo).
+**Fix:** `playwright install chromium` (and `playwright install-deps` on Linux).
 
-### `TypeError: process_freefire_topup() got an unexpected keyword argument`
+### `GET /topup?...` returns 401
 
-You're running an old version of `bot.py` that calls the automation
-with `headless=...`. Update `bot.py` — the current signature is
-`process_freefire_topup(uid, pkg, voucher, pin="")`.
+Your API key is not in `apikeys.json` or has been exhausted.
+
+```bash
+curl "http://localhost:8000/topup?api=WRONGKEY&uid=...&code=..."
+# → 401 {"detail":"API key rejected: unknown key"}
+```
+
+Add the key to `apikeys.json`, or call `POST /api/keys/reload` (localhost only).
+
+### `GET /topup?api=KEY&id=N` returns 404
+
+Either:
+- The order does not exist, or
+- The order belongs to a different key.
+
+Both cases return the same 404 to avoid leaking existence.
+
+### Stuck in `pending` after restart
+
+This is intentional — the recovery routine flips `pending` orders to `canceled`
+with `reason: "INTERRUPTED"` at startup, since the process that was running
+them is gone.
+
+### `orders.json` grows too large
+
+`MAX_ORDERS_KEPT` (default 1000) trims the oldest orders on every write.
 
 ### Telegram bot disabled
 
@@ -777,78 +796,32 @@ with `headless=...`. Update `bot.py` — the current signature is
 ⚠️ TG_BOT_TOKEN not set — Telegram bot disabled.
 ```
 
-**Fix:** check that:
-1. The file is literally named `.env` (not `.env.txt`)
-2. It's in the same directory as `bot.py`
-3. `TG_BOT_TOKEN=` is filled with a real token from @BotFather
-4. You restarted the service
-
-### Player lookup fails for valid UIDs
-
-The default `ffnamecheck.vercel.app` API is a third-party service and
-can be offline. Set `PLAYER_API_URLS` to a working endpoint.
-
-### Package tile won't click
-
-If Garena updated their UI:
-
-1. Try `WEBRENDER=true`
-2. Check the automation logs for "Could not click package tile"
-3. Adjust the selectors in `automation.py::_click_tile_by_text`
+Checklist:
+1. File is literally named `.env`
+2. `TG_BOT_TOKEN=` is filled
+3. `ENABLE_TELEGRAM_BOT=true`
+4. Service restarted
 
 ### Railway healthcheck fails
 
-```
-Deploy failed: healthcheck timeout
-```
+Bump `healthcheckTimeout` in `railway.json` to **90**. Chromium cold start takes 15–25 s.
 
-Bump `healthcheckTimeout` in `railway.json` to **90** (Chromium cold
-starts take 15–25s plus warm-up).
+### `apikeys.json` / `orders.json` disappear on redeploy
 
-### HTTP request times out
-
-`/api/topup` blocks for 30–120s. Some reverse proxies cut the connection
-at 30s. Either:
-
-- Increase the proxy timeout
-- Wrap `automation.process_freefire_topup` in a background task and
-  return a job ID (job-queue pattern)
-
-### `apikeys.json` gets overwritten
-
-By design — the app rewrites it whenever usage decrements. On ephemeral
-filesystems (Railway/Fly/Render), usage resets on every redeploy.
+Railway / Fly / Render use **ephemeral** filesystems. Mount a volume
+(Fly: `[[mounts]]`, Railway: attach a volume) or move to a proper database.
 
 ---
 
 ## 🔒 Security Notes
 
-1. **Never commit `.env`.** Add it to `.gitignore`.
-2. **Rotate leaked tokens.** If `TG_BOT_TOKEN` was ever pasted into
-   chat, a gist, or a screenshot, revoke it via @BotFather
-   (`/revoke` → select your bot → generate a new one).
-3. **`apikeys.json` is plain-text.** Treat it like a password store.
-4. **The public `/api/topup` has no auth.** If you expose the service
-   publicly, anyone can burn your vouchers. Options:
-   - Put a reverse proxy (nginx/Caddy) in front with HTTP basic auth
-   - Require an API key for `/api/topup` too (edit `main.py`)
-   - Bind to `127.0.0.1` and use an SSH tunnel
-5. **CORS is `allow_origins=["*"]`.** Tighten it in `main.py` for
-   production:
-
-   ```python
-   app.add_middleware(
-       CORSMiddleware,
-       allow_origins=["https://yourdomain.com"],
-       allow_credentials=True,
-       allow_methods=["GET", "POST"],
-       allow_headers=["*"],
-   )
-   ```
-
-6. **Usage counters are not atomic.** Concurrent requests on multiple
-   workers (uvicorn `--workers N`) can race on `apikeys.json`. Use a
-   single worker, or move counters to a database.
+1. **Never commit `.env`.** Add it to `.gitignore` and `.dockerignore`.
+2. **Rotate leaked tokens** via @BotFather if `TG_BOT_TOKEN` ever leaked.
+3. **`apikeys.json` and `orders.json` are plain-text.** Treat them as secrets.
+4. **The web key (`WEB_API_KEY`) is public** in the browser — it's unavoidable for a web UI. Give it a finite quota (`10000`, not `unlimited`), rotate if it hits 90%, watch the logs.
+5. **Per-key ownership is enforced.** `/api/order/{id}` returns 404 for keys that don't own the order.
+6. **CORS is `allow_origins=["*"]`.** Tighten it for production.
+7. **Usage counters are not atomic across workers.** Use `--workers 1`, or migrate counters to Redis/Postgres.
 
 ---
 
