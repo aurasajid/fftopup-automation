@@ -272,7 +272,6 @@
     to{opacity:1;transform:none}
   }
 
-  /* Left accent strip */
   .result-item::before{
     content:'';
     position:absolute;top:0;left:0;bottom:0;width:4px;
@@ -282,7 +281,6 @@
   .result-item.fail::before{background:var(--danger)}
   .result-item.pending::before{background:var(--warn)}
 
-  /* Header row */
   .res-head{
     display:flex;align-items:center;justify-content:space-between;
     gap:10px;margin-bottom:16px;flex-wrap:wrap
@@ -298,7 +296,6 @@
   .result-item.fail .res-title{color:var(--danger)}
   .result-item.pending .res-title{color:var(--warn)}
 
-  /* Copy button */
   .copy-btn{
     display:inline-flex;align-items:center;gap:6px;
     padding:5px 11px;border-radius:20px;border:1px solid var(--border);
@@ -310,7 +307,6 @@
   .copy-btn.copied{border-color:var(--success);color:var(--success)}
   .copy-btn i{font-size:.7rem}
 
-  /* Receipt body */
   .res-body{
     font-family:var(--ff-mono);
     font-size:.82rem;
@@ -380,7 +376,6 @@
     content:'| ';color:var(--text2);opacity:.5
   }
 
-  /* Error message */
   .res-error{
     margin-top:12px;padding:10px 12px;border-radius:10px;
     background:rgba(255,77,109,.08);border:1px solid rgba(255,77,109,.2);
@@ -389,7 +384,6 @@
   }
   .res-error strong{font-weight:700}
 
-  /* Pending spinner row */
   .res-pending-msg{
     display:flex;align-items:center;gap:8px;
     color:var(--text2);font-family:var(--ff);
@@ -397,7 +391,6 @@
   }
   .res-pending-msg i{color:var(--warn)}
 
-  /* Scroll-to-results flash */
   .flash{
     animation:flashHighlight 1.2s ease-out;
   }
@@ -568,7 +561,7 @@
 
   <div class="api-box reveal">
     <div><span class="k">GET</span> /topup?api=<span class="s">YOUR_KEY</span>&amp;uid=<span class="s">1234567890</span>&amp;pkg=<span class="s">115</span>&amp;code=<span class="s">UPBD-P-S-12345678 1234-5678-9012-3456</span></div>
-    <div style="margin-top:6px"><span class="k">GET</span> /topup?api=<span class="s">YOUR_KEY</span>&amp;uid=<span class="s">1234567890</span>&amp;pkg=<span class="s">115</span>&amp;code=<span class="s">UPBD-P-S-12345678 1234-5678-9012-3456</span></div>
+    <div style="margin-top:6px"><span class="k">GET</span> /api/order/<span class="s">{id}</span> — poll status</div>
     <div style="margin-top:6px"><span class="k">POST</span> /api/topup &nbsp;{ "api":"YOUR_KEY", "uid":"...", "pkg":"115", "code":"..." }</div>
   </div>
 
@@ -627,7 +620,7 @@
   })();
 
   /* =========================================================
-     HELPERS (defined before any caller)
+     HELPERS
      ========================================================= */
   function escapeHtml(str) {
     return String(str ?? '')
@@ -639,14 +632,16 @@
   }
 
   function truncateError(msg) {
-    // Keep only the first line and cap at 180 chars.
-    // Prevents Playwright call logs from flooding the UI.
     const first = String(msg || '').split('\n')[0].trim();
     return first.length > 180 ? first.slice(0, 180) + '…' : first;
   }
 
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
   /* =========================================================
-     GLOBAL CONFIG (loaded from /api/config)
+     GLOBAL CONFIG
      ========================================================= */
   const APP_CONFIG = {
     player_api_urls: ['https://ffnamecheck.vercel.app/info?uid={uid}'],
@@ -829,7 +824,7 @@
   buildPackageButtons();
 
   /* =========================================================
-     VOUCHER FIELD (single)
+     VOUCHER FIELD
      ========================================================= */
   const voucherList = document.getElementById('voucherList');
 
@@ -961,8 +956,6 @@
       `;
     }
 
-    // Copy button: only on non-pending cards that succeeded.
-    // Failed cards would otherwise copy a "Done!!" receipt — misleading.
     const showCopy = status === 'success';
 
     el.innerHTML = `
@@ -1012,13 +1005,13 @@
   function scrollToResults() {
     resultsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
     resultsEl.classList.remove('flash');
-    void resultsEl.offsetWidth;   // force reflow to restart animation
+    void resultsEl.offsetWidth;
     resultsEl.classList.add('flash');
     setTimeout(() => resultsEl.classList.remove('flash'), 1400);
   }
 
   /* =========================================================
-     FORM SUBMIT
+     FORM SUBMIT — enqueue → poll /api/order/{id} → render
      ========================================================= */
   const form = document.getElementById('topupForm');
   const submitBtn = document.getElementById('submitBtn');
@@ -1033,13 +1026,7 @@
     if (!uid || uid.length < 6) {
       buildResultCard({
         status: 'fail',
-        data: {
-          uid: uid || '—',
-          elapsed: '0.0',
-          packageName: prettifyPackageName(pkg),
-          voucherSerial: '',
-          voucherPin: ''
-        },
+        data: { uid: uid || '—', elapsed: '0.0', packageName: prettifyPackageName(pkg), voucherSerial: '', voucherPin: '' },
         errorMsg: 'Please enter a valid Free Fire UID (6–15 digits).'
       });
       scrollToResults();
@@ -1067,7 +1054,6 @@
       return;
     }
 
-    // ── API key must have been injected by the server ──
     if (!API_KEY) {
       buildResultCard({
         status: 'fail',
@@ -1086,6 +1072,7 @@
 
     const startedAt = performance.now();
 
+    // ── Pending card with live timer ──
     const pendingData = { uid, packageName, voucherSerial, voucherPin, elapsed: '0.0' };
     const pendingEl = buildResultCard({ status: 'pending', data: pendingData });
 
@@ -1098,17 +1085,20 @@
     scrollToResults();
 
     try {
-      const url = `/api/topup?api=${encodeURIComponent(API_KEY)}&uid=${encodeURIComponent(uid)}&pkg=${encodeURIComponent(pkg)}&code=${encodeURIComponent(code)}`;
-      const res = await fetch(url, { method: 'GET' });
+      /* ═══════ STEP 1: Enqueue the order ═══════ */
+      const enqueueUrl = `/api/topup?api=${encodeURIComponent(API_KEY)}` +
+                         `&uid=${encodeURIComponent(uid)}` +
+                         `&pkg=${encodeURIComponent(pkg)}` +
+                         `&code=${encodeURIComponent(code)}`;
+      const enqueueRes = await fetch(enqueueUrl, { method: 'GET' });
 
-      // Handle 401 specifically — clearer message than "network error"
-      if (res.status === 401) {
+      if (enqueueRes.status === 401) {
         clearInterval(ticker);
         pendingEl.remove();
         buildResultCard({
           status: 'fail',
           data: { uid, elapsed: '0.0', packageName, voucherSerial, voucherPin },
-          errorMsg: 'Unauthorized (401). The website API key is invalid or exhausted. Contact the administrator.'
+          errorMsg: 'Unauthorized (401). The website API key is invalid or exhausted.'
         });
         scrollToResults();
         submitBtn.disabled = false;
@@ -1116,20 +1106,84 @@
         return;
       }
 
-      const data = await res.json();
+      let enqueueData = null;
+      try { enqueueData = await enqueueRes.json(); } catch (_) {}
+
+      if (!enqueueData || !enqueueData.order_id) {
+        clearInterval(ticker);
+        pendingEl.remove();
+        buildResultCard({
+          status: 'fail',
+          data: { uid, elapsed: '0.0', packageName, voucherSerial, voucherPin },
+          errorMsg: 'Server did not return an order ID. Please try again.'
+        });
+        scrollToResults();
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fa-solid fa-rocket"></i> Start Top-Up';
+        return;
+      }
+
+      /* ═══════ STEP 2: Poll /api/order/{id} until done ═══════ */
+      const orderId = enqueueData.order_id;
+      const pollUrl = `/api/order/${orderId}?api=${encodeURIComponent(API_KEY)}`;
+      const POLL_INTERVAL_MS = 1000;
+      const MAX_WAIT_MS = 180000;   // 3 minutes
+      const pollStart = performance.now();
+
+      let finalOrder = null;
+      while (performance.now() - pollStart < MAX_WAIT_MS) {
+        await sleep(POLL_INTERVAL_MS);
+        let r;
+        try { r = await fetch(pollUrl, { method: 'GET' }); }
+        catch (_) { continue; }
+
+        if (r.status === 404) {
+          clearInterval(ticker);
+          pendingEl.remove();
+          buildResultCard({
+            status: 'fail',
+            data: { uid, elapsed: '0.0', packageName, voucherSerial, voucherPin },
+            errorMsg: `Order #${orderId} not found on the server.`
+          });
+          scrollToResults();
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<i class="fa-solid fa-rocket"></i> Start Top-Up';
+          return;
+        }
+
+        let od = null;
+        try { od = await r.json(); } catch (_) {}
+
+        if (od && od.status && od.status !== 'pending') {
+          finalOrder = od;
+          break;
+        }
+      }
 
       clearInterval(ticker);
-      const elapsedSecs = ((performance.now() - startedAt) / 1000).toFixed(1);
       pendingEl.remove();
 
+      const elapsedSecs = ((performance.now() - startedAt) / 1000).toFixed(1);
       const finalData = { uid, elapsed: elapsedSecs, packageName, voucherSerial, voucherPin };
 
-      if (data.success) {
+      /* ═══════ STEP 3: Render based on final status ═══════ */
+      if (!finalOrder) {
+        buildResultCard({
+          status: 'fail',
+          data: finalData,
+          errorMsg: `Timed out waiting for order #${orderId}. Check /api/order/${orderId} later.`
+        });
+      } else if (finalOrder.status === 'complete') {
         buildResultCard({ status: 'success', data: finalData });
+      } else if (finalOrder.status === 'canceled') {
+        const why = (finalOrder.reason || 'CANCELED').toUpperCase().slice(0, 60);
+        buildResultCard({
+          status: 'fail',
+          data: finalData,
+          errorMsg: `Top-up canceled (${why}). ${finalOrder.message || ''}`.trim()
+        });
       } else {
-        // Never show data.message on the web — it contains the Playwright
-        // call log which leaks internal details. Show only a short reason.
-        const shortReason = (data.reason || 'FAILED').toString().toUpperCase().slice(0, 60);
+        const shortReason = (finalOrder.reason || 'FAILED').toString().toUpperCase().slice(0, 60);
         buildResultCard({
           status: 'fail',
           data: finalData,
@@ -1140,9 +1194,9 @@
       scrollToResults();
     } catch (_) {
       clearInterval(ticker);
-      const elapsedSecs = ((performance.now() - startedAt) / 1000).toFixed(1);
       pendingEl.remove();
 
+      const elapsedSecs = ((performance.now() - startedAt) / 1000).toFixed(1);
       buildResultCard({
         status: 'fail',
         data: { uid, elapsed: elapsedSecs, packageName, voucherSerial, voucherPin },
