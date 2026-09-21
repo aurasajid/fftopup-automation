@@ -1,20 +1,3 @@
-"""
-Telegram bot using LONG POLLING.
-Supports:
-  1. Conversational flow: send UID → pick package → send voucher
-  2. Direct command: UID package voucher [pin]
-  3. Name lookup: bare UID or /name <uid>
-
-Result message mirrors the web receipt:
-    💎 Diamond Top-Up Done!!
-    • uid   : ...
-    • took  : 2.6s
-    Package: weekly membership
-    --------------------------------
-    Voucher: BDMB-Q-S-16413059
-    | 2692-9479-3554-7960
-"""
-
 import os
 import re
 import json
