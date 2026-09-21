@@ -1,22 +1,3 @@
-"""
-FF TopUp Automation — Garena Shop (Bangladesh)
-
-All behaviour is controlled via .env:
-  • WEBRENDER=true|false   → full render vs plain text
-  • HEADLESS=true|false    → handled by browser_pool (process-wide)
-  • BLOCK_TRACKERS=true|false
-  • All timeouts / pauses / type delays / poll intervals from .env
-
-Browser is reused via browser_pool (shared Chromium). The context is
-always released back to the pool in `finally`, so the idle rotator
-works for every caller (FastAPI, Telegram bot, CLI).
-
-Exports:
-  - process_freefire_topup(uid, pkg, voucher, pin="") -> JSON string
-  - parse_voucher(code, pin="") -> (clean_serial, clean_pin)
-  - detect_provider(clean_serial) -> "unipin" | "upgift" | None
-"""
-
 import sys
 import asyncio
 import json
