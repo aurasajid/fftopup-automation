@@ -1,31 +1,3 @@
-"""
-FF TopUp Automation — FastAPI app
-
-Flow:
-  GET /topup?api=KEY&uid=..&pkg=..&code=..
-      ├─ validate key  →  401 if bad, nothing leaked
-      ├─ create order (status=pending)
-      └─ 307 redirect → /topup?api=KEY&id=N   (same key, new id)
-
-  GET /topup?api=KEY&id=N
-      └─ queue the background job (browser automation) and return JSON
-
-  GET /api/order/{id}          → poll status
-  GET /api/orders              → recent orders (list)
-
-Order lifecycle:
-  pending → complete   (browser succeeded)
-  pending → failed     (browser returned a failure reason)
-  pending → canceled   (browser closed mid-flight, or app restarted)
-
-On startup:
-  Any pending order in orders.json is flipped to 'canceled' with
-  reason='INTERRUPTED' (the previous process is gone; the browser
-  is gone with it).
-
-API key usage is consumed ONLY on success (status=complete).
-"""
-
 import os
 import re
 import json
