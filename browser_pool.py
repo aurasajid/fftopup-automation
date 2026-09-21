@@ -1,18 +1,3 @@
-"""
-Global Playwright browser pool with anti-detection + warm-up.
-
-Launches Chromium once and reuses it for every top-up.
-
-Fingerprint rotation:
-  • A NEW BrowserContext (fresh UA / locale / timezone / viewport) is
-    created for every top-up via new_stealth_context().
-  • When the pool has been IDLE for IDLE_ROTATE_SECONDS (default 300s),
-    a background task tears down Chromium + Playwright and relaunches
-    them, so the next request gets a brand-new process-level fingerprint.
-  • Rotation is SKIPPED while any top-up is in progress
-    (_active_topups > 0).
-"""
-
 import asyncio
 import logging
 import os
