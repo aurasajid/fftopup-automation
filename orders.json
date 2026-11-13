@@ -1,0 +1,32 @@
+{
+  "1": {
+    "order_id": 1,
+    "uid": "3761036809",
+    "api_key": "fftpautotest",
+    "source": "direct",
+    "status": "failed",
+    "reason": "BATCH_INTERRUPTED",
+    "message": "Batch process error: Locator.wait_for: Target page, context or browser has been closed",
+    "total_vouchers": 1,
+    "completed_vouchers": 1,
+    "current_voucher": 1,
+    "vouchers": [
+      {
+        "index": 1,
+        "code": "BDMB-T-S-16413059 2692-9479-3554-7960..",
+        "pin": "2692947935547960",
+        "serial": "BDMBTS16413059",
+        "package": "25 Diamond",
+        "status": "failed",
+        "duration": 0.0,
+        "reason": "BATCH_INTERRUPTED",
+        "message": "Batch process error: Locator.wait_for: Target page, context or browser has been closed"
+      }
+    ],
+    "pkg": "25 Diamond",
+    "voucher": "BDMB-T-S-16413059 2692-9479-3554-7960..",
+    "duration": 3.92,
+    "created_at": 1794567958.2806022,
+    "updated_at": 1794567962.2391138
+  }
+}
