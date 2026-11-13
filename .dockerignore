@@ -1,0 +1,26 @@
+Dockerfile
+Dockerfile.txt
+Dockerfile (1).txt
+.dockerignore
+
+.env
+.env.*
+!.env.example
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+.git/
+.gitignore
+
+.vscode/
+.idea/
+
+*.log
+logs/
+
+.DS_Store
+Thumbs.db

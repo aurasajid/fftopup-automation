@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FF TopUp Automation — Bangladesh</title>
+<link rel="icon" href="https://cdn-icons-png.flaticon.com/512/686/686589.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Sora:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --r:14px;
+    --t:all .22s cubic-bezier(.4,0,.2,1);
+    --ff:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    --ff-display:'Sora','Inter',sans-serif;
+    --ff-mono:'JetBrains Mono',ui-monospace,Menlo,monospace;
+  }
+  [data-theme="dark"]{
+    --bg:#0a0a1a;--bg2:#111128;--card:#14142e;--card2:#1b1b3d;
+    --text:#f0f2ff;--text2:#8f92b8;--border:rgba(255,255,255,.07);
+    --primary:#7b5cff;--primary2:#5b3df0;--secondary:#00d9ff;--accent:#ff3d90;
+    --shadow:0 12px 40px rgba(0,0,0,.35);
+    --success:#2ecc71;--danger:#ff4d6d;--warn:#ffb347;
+  }
+  [data-theme="light"]{
+    --bg:#f5f6fc;--bg2:#ffffff;--card:#ffffff;--card2:#f7f7ff;
+    --text:#16162b;--text2:#5f6182;--border:rgba(0,0,0,.07);
+    --primary:#6c4cf5;--primary2:#5638d6;--secondary:#00a8c7;--accent:#ff3d90;
+    --shadow:0 8px 28px rgba(90,90,150,.1);
+    --success:#22b566;--danger:#e63e5c;--warn:#e6952f;
+  }
+  html,body{height:100%}
+  body{
+    font-family:var(--ff);
+    font-feature-settings:'cv02','cv03','cv04','cv11','ss01';
+    background:var(--bg);color:var(--text);
+    min-height:100vh;overflow-x:hidden;
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+    transition:background .3s,color .3s;
+    background-image:
+      radial-gradient(circle at 12% 8%, rgba(123,92,255,.14), transparent 50%),
+      radial-gradient(circle at 88% 92%, rgba(0,217,255,.1), transparent 50%);
+    background-attachment:fixed;
+    scroll-behavior:smooth;
+  }
+  .wrap{max-width:1100px;margin:0 auto;padding:24px 20px 80px}
+
+  /* Entrance animations */
+  .reveal{
+    opacity:0;
+    transform:translateY(28px);
+    transition:opacity .55s cubic-bezier(.22,1,.36,1),
+               transform .55s cubic-bezier(.22,1,.36,1);
+    will-change:opacity,transform;
+  }
+  .reveal.in{opacity:1;transform:none}
+  .reveal-stagger > *{
+    opacity:0;
+    transform:translateY(20px);
+    transition:opacity .5s cubic-bezier(.22,1,.36,1),
+               transform .5s cubic-bezier(.22,1,.36,1);
+  }
+  .reveal-stagger.in > *{opacity:1;transform:none}
+  .reveal-stagger.in > *:nth-child(1){transition-delay:.02s}
+  .reveal-stagger.in > *:nth-child(2){transition-delay:.06s}
+  .reveal-stagger.in > *:nth-child(3){transition-delay:.10s}
+  .reveal-stagger.in > *:nth-child(4){transition-delay:.14s}
+  .reveal-stagger.in > *:nth-child(5){transition-delay:.18s}
+
+  /* Navbar */
+  .nav{display:flex;justify-content:space-between;align-items:center;padding:16px 0;margin-bottom:30px}
+  .brand{display:flex;align-items:center;gap:12px}
+  .brand .logo{
+    width:44px;height:44px;border-radius:12px;
+    background:linear-gradient(135deg,var(--primary),var(--secondary));
+    display:flex;align-items:center;justify-content:center;color:#fff;font-size:1.2rem;
+    box-shadow:0 6px 18px rgba(123,92,255,.3)
+  }
+  .brand h1{
+    font-family:var(--ff-display);font-weight:800;
+    font-size:1.3rem;letter-spacing:-.02em;line-height:1;
+    background:linear-gradient(135deg,var(--primary),var(--secondary));
+    -webkit-background-clip:text;background-clip:text;color:transparent
+  }
+  .brand small{
+    display:block;font-family:var(--ff);font-size:.68rem;
+    color:var(--text2);letter-spacing:1.4px;margin-top:3px;font-weight:500
+  }
+  #themeBtn{
+    width:42px;height:42px;border-radius:50%;border:1px solid var(--border);
+    background:var(--card);color:var(--text);cursor:pointer;transition:var(--t);
+    display:flex;align-items:center;justify-content:center
+  }
+  #themeBtn:hover{transform:rotate(20deg);border-color:var(--primary)}
+
+  /* Hero */
+  .hero{text-align:center;margin-bottom:36px}
+  .hero .pill{
+    display:inline-block;padding:6px 16px;border-radius:50px;background:var(--card);
+    border:1px solid var(--border);font-size:.72rem;color:var(--secondary);
+    font-weight:600;letter-spacing:1.2px;text-transform:uppercase;margin-bottom:16px
+  }
+  .hero h2{
+    font-family:var(--ff-display);font-weight:800;
+    font-size:clamp(1.55rem,4.5vw,2.4rem);line-height:1.15;letter-spacing:-.025em;
+    background:linear-gradient(135deg,var(--text),var(--primary),var(--secondary));
+    -webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:12px
+  }
+  .hero p{color:var(--text2);max-width:560px;margin:0 auto;font-size:.95rem;line-height:1.55}
+
+  /* Card */
+  .card{
+    background:var(--card);border:1px solid var(--border);border-radius:var(--r);
+    padding:30px;box-shadow:var(--shadow)
+  }
+  .section-title{
+    display:flex;align-items:center;gap:10px;margin-bottom:20px;
+    font-family:var(--ff-display);font-weight:700;font-size:.95rem;letter-spacing:-.01em
+  }
+  .section-title .num{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:26px;height:26px;border-radius:50%;background:var(--card2);
+    border:1px solid var(--border);font-family:var(--ff-mono);
+    font-size:.72rem;color:var(--secondary);font-weight:600
+  }
+
+  /* Inputs */
+  .field{margin-bottom:18px}
+  .field label{
+    display:flex;justify-content:space-between;align-items:center;
+    font-size:.75rem;font-weight:600;color:var(--text2);
+    text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px
+  }
+  .field label .hint{
+    font-size:.7rem;font-weight:500;color:var(--text2);
+    text-transform:none;letter-spacing:0;opacity:.7
+  }
+  .input-row{display:flex;gap:8px}
+  .input-row input{flex:1;min-width:0}
+  input[type=text],textarea{
+    width:100%;padding:13px 16px;border-radius:12px;
+    border:1px solid var(--border);background:var(--bg2);color:var(--text);
+    font-family:var(--ff);font-size:.94rem;transition:var(--t);
+    font-weight:500
+  }
+  input:focus,textarea:focus{
+    outline:none;border-color:var(--primary);
+    box-shadow:0 0 0 3px rgba(123,92,255,.15)
+  }
+  textarea{resize:vertical;min-height:92px;font-family:var(--ff-mono);font-size:.84rem;line-height:1.55}
+
+  /* Buttons */
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    padding:12px 22px;border:none;border-radius:12px;font-weight:600;
+    font-size:.88rem;cursor:pointer;transition:var(--t);font-family:var(--ff);
+    white-space:nowrap;letter-spacing:-.01em
+  }
+  .btn-primary{
+    background:linear-gradient(135deg,var(--primary),var(--primary2));color:#fff;
+    box-shadow:0 8px 22px rgba(123,92,255,.28)
+  }
+  .btn-primary:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 12px 28px rgba(123,92,255,.4)}
+  .btn-primary:active:not(:disabled){transform:translateY(0)}
+  .btn-ghost{
+    background:var(--card2);border:1px solid var(--border);color:var(--text)
+  }
+  .btn-ghost:hover:not(:disabled){border-color:var(--primary);color:var(--primary)}
+  .btn-full{width:100%;padding:14px}
+  .btn:disabled{opacity:.55;cursor:not-allowed}
+  .btn-sm{padding:0 14px;font-size:.78rem;height:46px}
+
+  /* Notices */
+  .feature-notice{
+    display:flex;align-items:flex-start;gap:12px;
+    padding:13px 16px;border-radius:12px;
+    background:rgba(123,92,255,.08);
+    border:1px solid rgba(123,92,255,.24);
+    color:var(--text);font-size:.83rem;margin-bottom:18px;
+    line-height:1.5
+  }
+  .feature-notice i{margin-top:3px;color:var(--secondary);flex-shrink:0;font-size:.95rem}
+  .feature-notice strong{color:var(--secondary);font-weight:700}
+
+  .alert{
+    padding:12px 15px;border-radius:12px;font-size:.83rem;margin-bottom:18px;
+    display:flex;gap:10px;align-items:flex-start;line-height:1.45
+  }
+  .alert-info{background:rgba(0,217,255,.08);border:1px solid rgba(0,217,255,.2);color:var(--secondary)}
+
+  /* Player Card */
+  .player-card{
+    margin-top:10px;padding:14px 16px;border-radius:12px;
+    background:var(--card2);border:1px solid var(--border);
+    display:none;gap:12px;align-items:center;
+    animation:slideUpIn .35s cubic-bezier(.22,1,.36,1)
+  }
+  .player-card.show{display:flex}
+  .player-card .pavatar{
+    width:44px;height:44px;border-radius:12px;flex-shrink:0;
+    background:linear-gradient(135deg,var(--primary),var(--secondary));
+    display:flex;align-items:center;justify-content:center;
+    color:#fff;font-size:1.05rem
+  }
+  .player-card .pinfo{flex:1;min-width:0}
+  .player-card .pname{
+    font-weight:700;font-size:.94rem;line-height:1.3;
+    word-break:break-word;overflow-wrap:anywhere;font-family:var(--ff)
+  }
+  .player-card .pmeta{
+    display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;
+    font-size:.7rem;color:var(--text2)
+  }
+  .player-card .pmeta span{
+    background:var(--bg2);padding:3px 9px;border-radius:20px;
+    border:1px solid var(--border);font-weight:600
+  }
+  .player-card .pmeta .lvl{color:var(--secondary)}
+  .player-card .pmeta .region{color:var(--warn)}
+  .player-card.error{background:rgba(255,77,109,.07);border-color:rgba(255,77,109,.22)}
+  .player-card.error .pavatar{background:rgba(255,77,109,.18);color:var(--danger)}
+
+  /* Detected Vouchers Preview */
+  .detected-box{
+    margin-top:12px;padding:12px 14px;border-radius:12px;
+    background:var(--card2);border:1px solid var(--border);
+    display:none;flex-direction:column;gap:8px
+  }
+  .detected-box.show{display:flex}
+  .detected-head{
+    display:flex;justify-content:space-between;align-items:center;
+    font-size:.74rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.05em
+  }
+  .detected-count{
+    background:var(--bg2);border:1px solid var(--border);
+    padding:2px 8px;border-radius:12px;color:var(--secondary);font-family:var(--ff-mono);font-size:.7rem
+  }
+  .detected-list{display:flex;flex-direction:column;gap:6px}
+  .detected-item{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:8px 12px;border-radius:8px;background:var(--bg2);border:1px solid var(--border);
+    font-size:.78rem;font-family:var(--ff-mono)
+  }
+  .detected-item .d-serial{color:var(--text);font-weight:600;word-break:break-all}
+  .detected-item .d-badges{display:flex;gap:6px;align-items:center;flex-shrink:0}
+  .badge{
+    padding:3px 8px;border-radius:6px;font-size:.68rem;font-weight:700;
+    font-family:var(--ff);text-transform:uppercase;letter-spacing:.04em
+  }
+  .badge-unipin{background:rgba(255,61,144,.15);color:var(--accent);border:1px solid rgba(255,61,144,.3)}
+  .badge-upgift{background:rgba(0,217,255,.15);color:var(--secondary);border:1px solid rgba(0,217,255,.3)}
+  .badge-pkg{background:rgba(123,92,255,.18);color:var(--primary);border:1px solid rgba(123,92,255,.35)}
+  .badge-warn{background:rgba(255,179,71,.15);color:var(--warn);border:1px solid rgba(255,179,71,.3)}
+
+  /* Results and Live Progress */
+  .results{margin-top:28px}
+  .result-card{
+    background:var(--card);border:1.5px solid var(--border);border-radius:var(--r);
+    padding:24px;margin-bottom:20px;box-shadow:var(--shadow);
+    animation:slideUpIn .35s cubic-bezier(.22,1,.36,1)
+  }
+  .result-card.success{border-color:rgba(46,204,113,.4);background:linear-gradient(180deg,rgba(46,204,113,.04),transparent)}
+  .result-card.fail{border-color:rgba(255,77,109,.4);background:linear-gradient(180deg,rgba(255,77,109,.04),transparent)}
+  .result-card.pending{border-color:rgba(123,92,255,.4);background:linear-gradient(180deg,rgba(123,92,255,.05),transparent)}
+
+  .res-head{
+    display:flex;justify-content:space-between;align-items:center;
+    margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border)
+  }
+  .res-title{display:flex;align-items:center;gap:10px;font-family:var(--ff-display);font-weight:800;font-size:1.05rem}
+  .res-title .emoji{font-size:1.25rem}
+  .copy-btn{
+    padding:6px 14px;border-radius:8px;border:1px solid var(--border);
+    background:var(--card2);color:var(--text);font-size:.78rem;font-weight:600;
+    cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:var(--t)
+  }
+  .copy-btn:hover{border-color:var(--primary);color:var(--primary)}
+  .copy-btn.copied{border-color:var(--success);color:var(--success)}
+
+  .res-body{display:flex;flex-direction:column;gap:6px;font-size:.86rem;margin-bottom:12px}
+  .res-body .line{display:flex;gap:10px;align-items:baseline}
+  .res-body .k{color:var(--text2);min-width:90px;font-family:var(--ff-mono);font-size:.78rem}
+  .res-body .v{color:var(--text);font-weight:600}
+  .res-body .v.uid{font-family:var(--ff-mono);color:var(--secondary)}
+  .res-body .v.time{font-family:var(--ff-mono);color:var(--warn)}
+
+  /* Batch Progress Table */
+  .v-progress-list{
+    display:flex;flex-direction:column;gap:8px;margin-top:14px;
+    border-top:1px dashed var(--border);padding-top:14px
+  }
+  .v-row{
+    display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:10px 12px;border-radius:10px;background:var(--card2);border:1px solid var(--border);
+    font-size:.82rem
+  }
+  .v-row .v-info{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .v-row .v-serial{font-family:var(--ff-mono);font-size:.78rem;color:var(--text2);word-break:break-all}
+  .v-row .v-pkg{font-weight:700;color:var(--text)}
+  .v-row .v-status{display:flex;align-items:center;gap:6px;font-weight:700;font-size:.78rem;flex-shrink:0}
+  .v-status.status-complete{color:var(--success)}
+  .v-status.status-failed{color:var(--danger)}
+  .v-status.status-processing{color:var(--secondary)}
+  .v-status.status-pending{color:var(--text2)}
+
+  .res-error{
+    margin-top:12px;padding:10px 14px;border-radius:10px;
+    background:rgba(255,77,109,.08);border:1px solid rgba(255,77,109,.2);
+    color:var(--danger);font-size:.82rem;line-height:1.5
+  }
+
+  .flash{animation:flashHighlight 1.2s ease-out}
+  @keyframes flashHighlight{
+    0%{box-shadow:0 0 0 0 rgba(123,92,255,.45)}
+    60%{box-shadow:0 0 0 12px rgba(123,92,255,0)}
+    100%{box-shadow:0 0 0 0 rgba(123,92,255,0)}
+  }
+
+  /* API box */
+  .api-box{
+    margin-top:26px;background:var(--bg2);border:1px solid var(--border);
+    border-radius:12px;padding:16px;font-family:var(--ff-mono);
+    font-size:.75rem;color:var(--text2);overflow-x:auto;line-height:1.65
+  }
+  .api-box .k{color:var(--secondary)}
+  .api-box .s{color:var(--success)}
+
+  /* Footer */
+  footer{
+    text-align:center;color:var(--text2);font-size:.79rem;margin-top:56px;
+    padding-top:24px;border-top:1px solid var(--border);line-height:1.7
+  }
+  footer a{color:var(--secondary);text-decoration:none;font-weight:600}
+  footer a:hover{text-decoration:underline}
+  footer .dev-credit{margin-top:8px;font-size:.77rem;color:var(--text2)}
+  footer .dev-credit a{
+    display:inline-flex;align-items:center;gap:5px;
+    padding:3px 10px;border-radius:20px;
+    background:rgba(123,92,255,.1);border:1px solid rgba(123,92,255,.24);
+    margin-left:4px
+  }
+
+  @keyframes slideUpIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+
+  @media(max-width:640px){
+    .wrap{padding:16px 14px 60px}
+    .card{padding:20px 16px}
+    .hero h2{font-size:1.45rem}
+    .input-row{flex-direction:column}
+    .btn-sm{width:100%;height:44px}
+    .v-row{flex-direction:column;align-items:flex-start}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav class="nav reveal">
+    <div class="brand">
+      <div class="logo"><i class="fa-solid fa-bolt"></i></div>
+      <div>
+        <h1>FF TopUp</h1>
+        <small>BANGLADESH AUTOMATION</small>
+      </div>
+    </div>
+    <button id="themeBtn" aria-label="Toggle Theme"><i class="fa-solid fa-moon" id="themeIcon"></i></button>
+  </nav>
+
+  <header class="hero reveal">
+    <div class="pill"><i class="fa-solid fa-shield-halved"></i> Fast &bull; Stable &bull; Sequential</div>
+    <h2>Instant Free Fire Top-Up</h2>
+    <p>Auto package prefix detection with sequential batch processing in a single browser session.</p>
+  </header>
+
+  <div class="card reveal">
+    <form id="topupForm" novalidate>
+      <!-- STEP 1: PLAYER INFO -->
+      <div class="section-title"><span class="num">1</span> Player Information</div>
+
+      <div class="field">
+        <label for="uidInput">
+          <span>Free Fire UID</span>
+          <span class="hint">6–15 digits</span>
+        </label>
+        <div class="input-row">
+          <input type="text" id="uidInput" placeholder="e.g. 3761036809" inputmode="numeric" autocomplete="off" required>
+          <button type="button" class="btn btn-ghost btn-sm" id="fetchNameBtn">
+            <i class="fa-solid fa-magnifying-glass"></i> Fetch Name
+          </button>
+        </div>
+        <div class="player-card" id="playerCard">
+          <div class="pavatar" id="playerAvatar"><i class="fa-solid fa-user"></i></div>
+          <div class="pinfo">
+            <div class="pname" id="playerName">—</div>
+            <div class="pmeta" id="playerMeta"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 2: VOUCHERS & AUTO PACKAGE DETECTION -->
+      <div class="section-title" style="margin-top:28px">
+        <span class="num">2</span> Voucher Codes
+      </div>
+
+      <div class="feature-notice">
+        <i class="fa-solid fa-wand-magic-sparkles"></i>
+        <div>
+          <strong>Auto Package Detection:</strong> No need to choose a package!
+          Packages are detected instantly. Paste 1 voucher or a batch up to <strong id="maxVoucherLimitText">10</strong> vouchers (one per line).
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="voucherInput">
+          <span>Voucher Code(s)</span>
+          <span class="hint" id="voucherHint">One voucher per line</span>
+        </label>
+        <textarea id="voucherInput" placeholder="UPBD-Q-S-01989133 1527-6324-9731-2625&#10;BDMB-T-S-16413059 2692-9479-3554-7960" autocomplete="off" required></textarea>
+        
+        <!-- Live Package Preview -->
+        <div class="detected-box" id="detectedBox">
+          <div class="detected-head">
+            <span>Detected Vouchers</span>
+            <span class="detected-count" id="detectedCount">0</span>
+          </div>
+          <div class="detected-list" id="detectedList"></div>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-full" id="submitBtn" style="margin-top:20px">
+        <i class="fa-solid fa-rocket"></i> <span id="submitBtnText">Start Top-Up</span>
+      </button>
+    </form>
+
+    <div class="results" id="results"></div>
+  </div>
+
+  <div class="api-box reveal">
+    <div><span class="k">GET</span> /topup?api=<span class="s">KEY</span>&amp;uid=<span class="s">3761036809</span>&amp;code=<span class="s">UPBD-Q-S-01989133 1527-6324...</span></div>
+    <div style="margin-top:6px"><span class="k">GET</span> /api/order/<span class="s">{id}</span> &bull; live progress &amp; results</div>
+    <div style="margin-top:6px"><span class="k">POST</span> /api/topup &nbsp;{ "api": "KEY", "uid": "3761036809", "code": "UPBD-Q-S-..." }</div>
+    <div style="margin-top:6px"><span class="k">GET</span> /api/namecheck?uid=<span class="s">3761036809</span> &bull; player nickname lookup</div>
+  </div>
+
+  <footer class="reveal">
+    &copy; <span id="year"></span> FF TopUp Automation for Bangladesh
+    <div class="dev-credit" id="devCredit"></div>
+  </footer>
+</div>
+
+<script>
+  "use strict";
+
+  const API_KEY = window.__FFT_API_KEY__ || '';
+  const MAX_VOUCHERS = window.__MAX_VOUCHERS__ || 10;
+  document.getElementById('maxVoucherLimitText').textContent = MAX_VOUCHERS;
+
+  /* Theme */
+  const root = document.documentElement;
+  const themeIcon = document.getElementById('themeIcon');
+  const savedTheme = localStorage.getItem('fftheme') || 'dark';
+  root.setAttribute('data-theme', savedTheme);
+  themeIcon.className = savedTheme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+  document.getElementById('themeBtn').addEventListener('click', () => {
+    const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    localStorage.setItem('fftheme', next);
+    themeIcon.className = next === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+  });
+
+  document.getElementById('year').textContent = new Date().getFullYear();
+
+  /* Entrance animations */
+  (function initReveals() {
+    const reveals = document.querySelectorAll('.reveal');
+    if (!('IntersectionObserver' in window)) {
+      reveals.forEach(el => el.classList.add('in'));
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('in');
+          io.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.08 });
+    reveals.forEach((el, i) => {
+      el.style.transitionDelay = (i * 60) + 'ms';
+      io.observe(el);
+    });
+  })();
+
+  function escapeHtml(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /* Load Config */
+  (async function loadConfig() {
+    try {
+      const r = await fetch('/api/config');
+      if (r.ok) {
+        const c = await r.json();
+        const el = document.getElementById('devCredit');
+        if (el && (c.dev_name || c.dev_link)) {
+          const name = c.dev_name || 'Developer';
+          const link = c.dev_link || '';
+          const text = c.dev_link_text || name;
+          if (link) {
+            el.innerHTML = `Developed by <a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-circle-nodes"></i> ${escapeHtml(text)}</a>`;
+          } else {
+            el.textContent = `Developed by ${name}`;
+          }
+        }
+      }
+    } catch (_) {}
+  })();
+
+  /* =========================================================
+     PLAYER NAME CHECK (VIA BACKEND /api/namecheck)
+     ========================================================= */
+  const uidInput = document.getElementById('uidInput');
+  const fetchNameBtn = document.getElementById('fetchNameBtn');
+  const playerCard = document.getElementById('playerCard');
+  const playerName = document.getElementById('playerName');
+  const playerMeta = document.getElementById('playerMeta');
+  const playerAvatar = document.getElementById('playerAvatar');
+
+  function hidePlayerCard() {
+    playerCard.classList.remove('show', 'error');
+    playerName.textContent = '—';
+    playerMeta.innerHTML = '';
+    playerAvatar.innerHTML = '<i class="fa-solid fa-user"></i>';
+  }
+
+  async function fetchPlayerName() {
+    const uid = uidInput.value.replace(/\D/g, '');
+    if (!uid || uid.length < 6) {
+      playerCard.classList.add('show', 'error');
+      playerName.textContent = 'Please enter a valid UID (6–15 digits)';
+      playerMeta.innerHTML = '';
+      playerAvatar.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i>';
+      return;
+    }
+
+    fetchNameBtn.disabled = true;
+    const oldBtn = fetchNameBtn.innerHTML;
+    fetchNameBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Fetching...';
+
+    playerCard.classList.add('show');
+    playerCard.classList.remove('error');
+    playerName.textContent = 'Looking up player name...';
+    playerMeta.innerHTML = '';
+    playerAvatar.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+
+    try {
+      const res = await fetch(`/api/namecheck?uid=${encodeURIComponent(uid)}`);
+      if (!res.ok) throw new Error('Not found');
+      const data = await res.json();
+
+      if (data && data.nickname) {
+        playerCard.classList.remove('error');
+        playerName.textContent = data.nickname;
+        playerName.setAttribute('title', data.nickname);
+
+        const badges = [];
+        if (data.level) badges.push(`<span class="lvl"><i class="fa-solid fa-star"></i> Lv ${escapeHtml(data.level)}</span>`);
+        if (data.region) badges.push(`<span class="region"><i class="fa-solid fa-location-dot"></i> ${escapeHtml(data.region)}</span>`);
+        badges.push(`<span><i class="fa-solid fa-hashtag"></i> ${escapeHtml(data.uid || uid)}</span>`);
+        playerMeta.innerHTML = badges.join('');
+        playerAvatar.innerHTML = '<i class="fa-solid fa-user-astronaut"></i>';
+      } else {
+        throw new Error('Invalid response');
+      }
+    } catch (_) {
+      playerCard.classList.add('error');
+      playerName.textContent = 'Player not found';
+      playerMeta.innerHTML = '<span style="color:var(--danger)">Could not verify name. Top-up can still proceed.</span>';
+      playerAvatar.innerHTML = '<i class="fa-solid fa-user-slash"></i>';
+    }
+
+    fetchNameBtn.disabled = false;
+    fetchNameBtn.innerHTML = oldBtn;
+  }
+
+  fetchNameBtn.addEventListener('click', fetchPlayerName);
+  uidInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); fetchPlayerName(); }
+  });
+  uidInput.addEventListener('input', e => {
+    e.target.value = e.target.value.replace(/\D/g, '').slice(0, 15);
+    hidePlayerCard();
+  });
+
+  /* =========================================================
+     PACKAGE PREFIX DETECTION TABLE (Client-Side Mirror of pkg.py)
+     ========================================================= */
+  const PREFIX_TABLE = [
+    { prefix: 'BDMBTS', label: '25 Diamond', provider: 'UniPin' },
+    { prefix: 'UPBDQS', label: '25 Diamond', provider: 'UP Gift' },
+    { prefix: 'BDMBUS', label: '50 Diamond', provider: 'UniPin' },
+    { prefix: 'UPBDRS', label: '50 Diamond', provider: 'UP Gift' },
+    { prefix: 'BDMBJS', label: '115 Diamond', provider: 'UniPin' },
+    { prefix: 'UPBDGS', label: '115 Diamond', provider: 'UP Gift' },
+    { prefix: 'BDMBIS', label: '240 Diamond', provider: 'UniPin' },
+    { prefix: 'UPBDFS', label: '240 Diamond', provider: 'UP Gift' },
+    { prefix: 'BDMBQS', label: 'Weekly Membership', provider: 'UniPin' },
+    { prefix: 'UPBDNS', label: 'Weekly Membership', provider: 'UP Gift' },
+    { prefix: 'BDMBKS', label: '610 Diamond', provider: 'UniPin' },
+    { prefix: 'UPBDHS', label: '610 Diamond', provider: 'UP Gift' },
+    { prefix: 'BDMBSS', label: 'Monthly Membership', provider: 'UniPin' },
+    { prefix: 'UPBDPS', label: 'Monthly Membership', provider: 'UP Gift' },
+    { prefix: 'BDMBLS', label: '1240 Diamond', provider: 'UniPin' },
+    { prefix: 'UPBDIS', label: '1240 Diamond', provider: 'UP Gift' },
+    { prefix: 'BDMBMS', label: '2530 Diamond', provider: 'UniPin' },
+    { prefix: 'UPBDJS', label: '2530 Diamond', provider: 'UP Gift' },
+  ];
+
+  function detectClientPackage(voucherLine) {
+    if (!voucherLine) return null;
+    const token = voucherLine.trim().split(/[\s,]+/)[0] || '';
+    const clean = token.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    for (const item of PREFIX_TABLE) {
+      if (clean.startsWith(item.prefix)) return item;
+    }
+    if (clean.startsWith('BDMB')) return { label: 'UniPin (Auto)', provider: 'UniPin' };
+    if (clean.startsWith('UPBD')) return { label: 'UP Gift (Auto)', provider: 'UP Gift' };
+    return null;
+  }
+
+  /* Live Voucher Preview */
+  const voucherInput = document.getElementById('voucherInput');
+  const detectedBox = document.getElementById('detectedBox');
+  const detectedList = document.getElementById('detectedList');
+  const detectedCount = document.getElementById('detectedCount');
+  const submitBtnText = document.getElementById('submitBtnText');
+
+  function updateVoucherPreview() {
+    const lines = voucherInput.value.split('\n').map(s => s.trim()).filter(Boolean);
+    if (lines.length === 0) {
+      detectedBox.classList.remove('show');
+      submitBtnText.textContent = 'Start Top-Up';
+      return;
+    }
+
+    detectedBox.classList.add('show');
+    detectedCount.textContent = `${lines.length} / ${MAX_VOUCHERS}`;
+    if (lines.length > MAX_VOUCHERS) {
+      detectedCount.style.color = 'var(--danger)';
+    } else {
+      detectedCount.style.color = 'var(--secondary)';
+    }
+
+    detectedList.innerHTML = '';
+    lines.slice(0, MAX_VOUCHERS).forEach((line, i) => {
+      const match = detectClientPackage(line);
+      const serialPart = line.split(/[\s,]+/)[0];
+      const el = document.createElement('div');
+      el.className = 'detected-item';
+      
+      const badgeProvider = match ? (match.provider === 'UniPin' ? 'badge-unipin' : 'badge-upgift') : 'badge-warn';
+      const providerText = match ? match.provider : 'Unknown Prefix';
+      const pkgText = match ? match.label : 'Fallback';
+
+      el.innerHTML = `
+        <span class="d-serial">#${i + 1} &bull; ${escapeHtml(serialPart)}</span>
+        <div class="d-badges">
+          <span class="badge ${badgeProvider}">${escapeHtml(providerText)}</span>
+          <span class="badge badge-pkg">${escapeHtml(pkgText)}</span>
+        </div>
+      `;
+      detectedList.appendChild(el);
+    });
+
+    submitBtnText.textContent = lines.length > 1
+      ? `Start Batch Top-Up (${lines.length} Vouchers)`
+      : `Start Top-Up (1 Voucher)`;
+  }
+
+  voucherInput.addEventListener('input', updateVoucherPreview);
+
+  /* =========================================================
+     FORM SUBMIT & SEQUENTIAL PROGRESS TRACKING
+     ========================================================= */
+  const form = document.getElementById('topupForm');
+  const submitBtn = document.getElementById('submitBtn');
+  const resultsEl = document.getElementById('results');
+
+  function renderProgressCard(uid, totalVouchers, currentVouchers) {
+    resultsEl.innerHTML = '';
+    const card = document.createElement('div');
+    card.className = 'result-card pending';
+    card.id = 'liveProgressCard';
+
+    card.innerHTML = `
+      <div class="res-head">
+        <div class="res-title">
+          <span class="emoji"><i class="fa-solid fa-spinner fa-spin" style="color:var(--primary)"></i></span>
+          <span id="progressCardTitle">Processing Batch (1/${totalVouchers})...</span>
+        </div>
+        <span class="copy-btn" id="liveTimer"><i class="fa-regular fa-clock"></i> 0.0s</span>
+      </div>
+      <div class="res-body">
+        <div class="line"><span class="k">• UID</span><span class="v uid">${escapeHtml(uid)}</span></div>
+        <div class="line"><span class="k">• Queue</span><span class="v" id="progressQueueStatus">Executing in active session</span></div>
+      </div>
+      <div class="v-progress-list" id="vProgressList"></div>
+    `;
+
+    const listEl = card.querySelector('#vProgressList');
+    currentVouchers.forEach((v, idx) => {
+      const row = document.createElement('div');
+      row.className = 'v-row';
+      row.id = `vRow_${idx}`;
+      row.innerHTML = `
+        <div class="v-info">
+          <span class="v-pkg">${escapeHtml(v.package || 'Detecting...')}</span>
+          <span class="v-serial">🎟 ${escapeHtml(v.serial || v.code)}</span>
+        </div>
+        <span class="v-status status-pending" id="vStatus_${idx}">
+          <i class="fa-regular fa-hourglass"></i> Queued
+        </span>
+      `;
+      listEl.appendChild(row);
+    });
+
+    resultsEl.appendChild(card);
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return card;
+  }
+
+  function updateVoucherRows(vouchers) {
+    if (!vouchers || !Array.isArray(vouchers)) return;
+    vouchers.forEach((v, idx) => {
+      const statusEl = document.getElementById(`vStatus_${idx}`);
+      if (!statusEl) return;
+      const row = document.getElementById(`vRow_${idx}`);
+
+      if (v.status === 'processing') {
+        statusEl.className = 'v-status status-processing';
+        statusEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing...';
+      } else if (v.status === 'complete') {
+        statusEl.className = 'v-status status-complete';
+        statusEl.innerHTML = `<i class="fa-solid fa-check"></i> Done (${v.duration || '0.0'}s)`;
+      } else if (v.status === 'failed') {
+        statusEl.className = 'v-status status-failed';
+        const err = v.reason || 'Failed';
+        statusEl.innerHTML = `<i class="fa-solid fa-xmark"></i> ${escapeHtml(err)}`;
+      }
+    });
+  }
+
+  function renderFinalSummary(order) {
+    resultsEl.innerHTML = '';
+    const isSuccess = order.status === 'complete';
+    const total = order.total_vouchers || (order.vouchers ? order.vouchers.length : 1);
+    const successes = order.vouchers ? order.vouchers.filter(v => v.status === 'complete').length : (isSuccess ? 1 : 0);
+
+    const card = document.createElement('div');
+    card.className = `result-card ${isSuccess ? 'success' : 'fail'}`;
+
+    const title = isSuccess ? 'Diamond Top-Up Done !!' : 'Top-Up Finished With Errors';
+    const emoji = isSuccess ? '💎' : '⚠️';
+
+    let voucherItemsHtml = '';
+    if (order.vouchers && order.vouchers.length > 0) {
+      voucherItemsHtml = order.vouchers.map((v, i) => {
+        const icon = v.status === 'complete' ? '✅' : '❌';
+        const note = v.status === 'complete' ? `${v.duration}s` : escapeHtml(v.reason || 'Failed');
+        return `
+          <div class="v-row">
+            <div class="v-info">
+              <span class="v-pkg">${icon} #${i + 1} ${escapeHtml(v.package)} &bull; ${note}</span>
+              <span class="v-serial">🎟 ${escapeHtml(v.serial || v.code)}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    card.innerHTML = `
+      <div class="res-head">
+        <div class="res-title">
+          <span class="emoji">${emoji}</span>
+          <span>${title}</span>
+        </div>
+        <button type="button" class="copy-btn" id="copyReceiptBtn">
+          <i class="fa-solid fa-copy"></i> Copy Receipt
+        </button>
+      </div>
+      <div class="res-body">
+        <div class="line"><span class="k">• UID</span><span class="v uid">${escapeHtml(order.uid)}</span></div>
+        <div class="line"><span class="k">• Took</span><span class="v time">${order.duration || '0.0'}s</span></div>
+        <div class="line"><span class="k">• Success</span><span class="v">${successes} / ${total}</span></div>
+      </div>
+      <div class="v-progress-list">${voucherItemsHtml}</div>
+      ${order.reason && !isSuccess ? `<div class="res-error"><strong>Details:</strong> ${escapeHtml(order.message || order.reason)}</div>` : ''}
+    `;
+
+    resultsEl.appendChild(card);
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Copy receipt listener
+    const copyBtn = card.querySelector('#copyReceiptBtn');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', async () => {
+        const lines = [
+          isSuccess ? '💎 Diamond Top-Up Done!!' : '⚠️ Top-Up Result',
+          '',
+          `• UID     : ${order.uid}`,
+          `• Took    : ${order.duration || '0.0'}s`,
+          `• Success : ${successes} / ${total}`,
+          '──────────────────'
+        ];
+        if (order.vouchers) {
+          order.vouchers.forEach((v, i) => {
+            const icon = v.status === 'complete' ? '✅' : '❌';
+            const note = v.status === 'complete' ? `${v.duration}s` : (v.reason || 'Failed');
+            lines.push(`${icon} #${i + 1} ${v.package} — ${note}`);
+            lines.push(`   Voucher: ${v.serial || v.code}`);
+          });
+        }
+        try {
+          await navigator.clipboard.writeText(lines.join('\n'));
+          copyBtn.innerHTML = '<i class="fa-solid fa-check"></i> Copied!';
+          setTimeout(() => { copyBtn.innerHTML = '<i class="fa-solid fa-copy"></i> Copy Receipt'; }, 1600);
+        } catch (_) {}
+      });
+    }
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const uid = uidInput.value.replace(/\D/g, '');
+    const rawVouchers = voucherInput.value.trim();
+
+    if (!uid || uid.length < 6) {
+      alert('Please enter a valid Free Fire UID (6–15 digits).');
+      return;
+    }
+    if (!rawVouchers) {
+      alert('Please enter at least one voucher code.');
+      return;
+    }
+
+    const lines = rawVouchers.split('\n').map(s => s.trim()).filter(Boolean);
+    if (lines.length > MAX_VOUCHERS) {
+      alert(`Exceeded limit: You provided ${lines.length} vouchers. Maximum allowed is ${MAX_VOUCHERS}.`);
+      return;
+    }
+
+    if (!API_KEY) {
+      alert('Server configuration error: WEB_API_KEY is missing.');
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Submitting Batch...';
+
+    // Build initial preview list for live progress card
+    const initialVoucherList = lines.map((l, i) => {
+      const match = detectClientPackage(l);
+      const cleanSerial = l.split(/[\s,]+/)[0];
+      return {
+        code: l,
+        serial: cleanSerial,
+        package: match ? match.label : 'Auto Package',
+        status: 'pending'
+      };
+    });
+
+    renderProgressCard(uid, lines.length, initialVoucherList);
+
+    const startedAt = performance.now();
+    const timerEl = document.getElementById('liveTimer');
+    const ticker = setInterval(() => {
+      if (timerEl) {
+        const s = ((performance.now() - startedAt) / 1000).toFixed(1);
+        timerEl.innerHTML = `<i class="fa-regular fa-clock"></i> ${s}s`;
+      }
+    }, 100);
+
+    try {
+      // 1. Enqueue batch
+      const res = await fetch('/api/topup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          api: API_KEY,
+          uid: uid,
+          code: rawVouchers,
+        })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Failed to enqueue top-up order.');
+      }
+
+      const enq = await res.json();
+      const orderId = enq.order_id;
+
+      // 2. Poll sequential progress
+      const pollUrl = `/api/order/${orderId}?api=${encodeURIComponent(API_KEY)}`;
+      const pollStart = performance.now();
+      let finalOrder = null;
+
+      while (performance.now() - pollStart < 300000) { // 5 min timeout
+        await sleep(1000);
+        let r;
+        try { r = await fetch(pollUrl); } catch (_) { continue; }
+        if (!r.ok) continue;
+        const ord = await r.json().catch(() => null);
+        if (!ord) continue;
+
+        // Update live progress rows
+        if (ord.vouchers) updateVoucherRows(ord.vouchers);
+
+        const cardTitle = document.getElementById('progressCardTitle');
+        if (cardTitle && ord.current_voucher) {
+          cardTitle.textContent = `Processing Voucher ${ord.current_voucher} of ${ord.total_vouchers}...`;
+        }
+
+        if (ord.status && !['pending', 'processing', 'queued'].includes(ord.status)) {
+          finalOrder = ord;
+          break;
+        }
+      }
+
+      clearInterval(ticker);
+
+      if (finalOrder) {
+        renderFinalSummary(finalOrder);
+      } else {
+        throw new Error('Order polling timed out. Please check order status later.');
+      }
+
+    } catch (err) {
+      clearInterval(ticker);
+      resultsEl.innerHTML = `
+        <div class="result-card fail">
+          <div class="res-head">
+            <div class="res-title"><span class="emoji">❌</span><span>Order Error</span></div>
+          </div>
+          <div class="res-error">${escapeHtml(err.message)}</div>
+        </div>
+      `;
+    }
+
+    submitBtn.disabled = false;
+    submitBtnText.textContent = lines.length > 1 ? `Start Batch Top-Up (${lines.length} Vouchers)` : 'Start Top-Up';
+  });
+</script>
+</body>
+</html>
